@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; font-src 'none'; object-src 'none'; media-src 'none'; frame-src 'none'; worker-src 'none'; manifest-src 'none'; base-uri 'none'; form-action 'none'">
   <title>Local QR Code Generator</title>
   <style>
     :root {
@@ -79,6 +80,7 @@
   <main>
     <h1>Local QR Code Generator</h1>
     <p>Create a QR code for text, a URL, or a Wi-Fi network. Everything runs in this page; nothing is sent or saved.</p>
+    <p class="hint">The complete QR payload is limited to 271 UTF-8 bytes. Wi-Fi prefixes and escaped characters count toward this limit.</p>
     <div class="tabs" role="group" aria-label="QR code type">
       <button type="button" id="text-tab" aria-pressed="true">Text or URL</button>
       <button type="button" id="wifi-tab" aria-pressed="false">Wi-Fi</button>
@@ -105,7 +107,7 @@
           <label><input id="show-ssid" type="checkbox"> SSID</label>
           <label><input id="show-password" type="checkbox"> Password</label>
         </fieldset>
-        <p class="hint privacy">Your Wi-Fi password is only used to make this QR code and is never stored.</p>
+        <p class="hint privacy">Your Wi-Fi password is only used to make this QR code and is cleared after generation. If selected, it appears in the QR picture and downloaded SVG.</p>
       </section>
       <button type="submit">Generate QR code</button>
     </form>
@@ -140,6 +142,7 @@
         [], [19], [34], [55], [80], [108], [68, 68], [78, 78], [97, 97],
         [116, 116], [68, 68, 69, 69]
       ];
+      // These tables describe error-correction level L for QR versions 1 through 10.
       const eccPerBlock = [0, 7, 10, 15, 20, 26, 18, 20, 24, 30, 18];
       const alignmentPositions = [
         [], [], [6, 18], [6, 22], [6, 26], [6, 30], [6, 34],
@@ -151,6 +154,7 @@
       }
 
       function multiply(a, b) {
+        // Reed-Solomon operates on bytes as polynomials in GF(256).
         let result = 0;
         let factor = a;
         for (let i = 0; i < 8; i++) {
@@ -183,6 +187,7 @@
       }
 
       function makeCodewords(bytes, version) {
+        // Encode in byte mode, add padding, then interleave data and error-correction blocks.
         const lengths = blockDataLengths[version];
         const dataCapacity = lengths.reduce((sum, length) => sum + length, 0);
         const bits = [];
@@ -216,6 +221,7 @@
       }
 
       function makeMatrix(codewords, version, mask) {
+        // Mark finder, timing, alignment, and format areas before placing masked data bits.
         const size = version * 4 + 17;
         const modules = Array.from({ length: size }, () => new Array(size).fill(false));
         const functionModules = Array.from({ length: size }, () => new Array(size).fill(false));
@@ -352,6 +358,7 @@
       }
 
       function escapeXml(value) {
+        // Labels become SVG text and must not be interpreted as markup.
         return value.replace(/[&<>"']/g, (character) => ({
           "&": "&amp;",
           "<": "&lt;",
@@ -362,6 +369,7 @@
       }
 
       function createQr(value, annotations = []) {
+        // Version 10-L byte mode holds at most 271 bytes, including any Wi-Fi payload syntax.
         const bytes = Array.from(new TextEncoder().encode(value));
         let version = 1;
         for (; version <= 10; version++) {
@@ -398,6 +406,7 @@
       }
 
       function escapeWifi(value) {
+        // Escape reserved characters in the standard WIFI: payload format.
         return value.replace(/([\\;,":])/g, "\\$1");
       }
 
@@ -414,6 +423,7 @@
             if (!ssid) throw new Error("Enter the network name.");
             if (security !== "nopass" && !password) throw new Error("Enter the network password.");
             value = `WIFI:T:${security};S:${escapeWifi(ssid)};${security === "nopass" ? "" : `P:${escapeWifi(password)};`};`;
+            // Annotations are optional and are separate from the scannable QR payload.
             if ($("show-ssid").checked) annotations.push({ label: "SSID", value: ssid });
             if ($("show-password").checked && security !== "nopass") {
               annotations.push({ label: "Password", value: password });
@@ -427,6 +437,7 @@
           if (downloadUrl) URL.revokeObjectURL(downloadUrl);
           downloadUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
           $("download").href = downloadUrl;
+          // The generated QR/download remains available; only clear the form's password field.
           if (mode === "wifi") $("password").value = "";
           $("result").classList.remove("hidden");
         } catch (error) {
