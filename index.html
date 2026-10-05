@@ -48,6 +48,14 @@
       color: inherit;
       background: #fff;
     }
+    .picture-options label {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      margin: .5rem 0;
+      font-weight: 400;
+    }
+    .picture-options input { width: auto; }
     textarea { min-height: 8rem; resize: vertical; }
     .hint { margin: .35rem 0 1rem; font-size: .9rem; }
     .hidden { display: none; }
@@ -92,6 +100,11 @@
         </select>
         <label for="password">Network password</label>
         <input id="password" type="password" autocomplete="off">
+        <fieldset class="picture-options">
+          <legend>Show on the picture</legend>
+          <label><input id="show-ssid" type="checkbox"> SSID</label>
+          <label><input id="show-password" type="checkbox"> Password</label>
+        </fieldset>
         <p class="hint privacy">Your Wi-Fi password is only used to make this QR code and is never stored.</p>
       </section>
       <button type="submit">Generate QR code</button>
@@ -338,7 +351,17 @@
         return score;
       }
 
-      function createQr(value) {
+      function escapeXml(value) {
+        return value.replace(/[&<>"']/g, (character) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&apos;"
+        })[character]);
+      }
+
+      function createQr(value, annotations = []) {
         const bytes = Array.from(new TextEncoder().encode(value));
         let version = 1;
         for (; version <= 10; version++) {
@@ -360,7 +383,18 @@
         best.modules.forEach((row, y) => row.forEach((dark, x) => {
           if (dark) path += `M${x + quiet},${y + quiet}h1v1h-1z`;
         }));
-        return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${dimension} ${dimension}" role="img" aria-label="QR code"><rect width="100%" height="100%" fill="#fff"/><path d="${path}" fill="#000" shape-rendering="crispEdges"/></svg>`;
+        const maxLineLength = Math.max(1, Math.floor((dimension - 4) / 1.8));
+        const lines = annotations.flatMap(({ label, value: annotation }) => {
+          const characters = Array.from(`${label}: ${annotation}`);
+          const wrapped = [];
+          while (characters.length) wrapped.push(characters.splice(0, maxLineLength).join(""));
+          return wrapped;
+        });
+        const height = dimension + (lines.length ? lines.length * 5 + 2 : 0);
+        const text = lines.map((line, index) =>
+          `<text x="${dimension / 2}" y="${dimension + 4 + index * 5}" text-anchor="middle" font-family="sans-serif" font-size="3">${escapeXml(line)}</text>`
+        ).join("");
+        return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${dimension} ${height}" role="img" aria-label="QR code"><rect width="100%" height="100%" fill="#fff"/><path d="${path}" fill="#000" shape-rendering="crispEdges"/>${text}</svg>`;
       }
 
       function escapeWifi(value) {
@@ -372,6 +406,7 @@
         $("error").textContent = "";
         try {
           let value;
+          const annotations = [];
           if (mode === "wifi") {
             const ssid = $("ssid").value;
             const security = $("security").value;
@@ -379,11 +414,15 @@
             if (!ssid) throw new Error("Enter the network name.");
             if (security !== "nopass" && !password) throw new Error("Enter the network password.");
             value = `WIFI:T:${security};S:${escapeWifi(ssid)};${security === "nopass" ? "" : `P:${escapeWifi(password)};`};`;
+            if ($("show-ssid").checked) annotations.push({ label: "SSID", value: ssid });
+            if ($("show-password").checked && security !== "nopass") {
+              annotations.push({ label: "Password", value: password });
+            }
           } else {
             value = $("text").value;
             if (!value) throw new Error("Enter text or a URL.");
           }
-          const svg = createQr(value);
+          const svg = createQr(value, annotations);
           $("qr").innerHTML = svg;
           if (downloadUrl) URL.revokeObjectURL(downloadUrl);
           downloadUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
