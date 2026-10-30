@@ -391,17 +391,21 @@
         best.modules.forEach((row, y) => row.forEach((dark, x) => {
           if (dark) path += `M${x + quiet},${y + quiet}h1v1h-1z`;
         }));
-        const maxLineLength = Math.max(1, Math.floor((dimension - 4) / 1.8));
-        const lines = annotations.flatMap(({ label, value: annotation }) => {
-          const characters = Array.from(`${label}: ${annotation}`);
-          const wrapped = [];
-          while (characters.length) wrapped.push(characters.splice(0, maxLineLength).join(""));
-          return wrapped;
-        });
-        const height = dimension + (lines.length ? lines.length * 5 + 2 : 0);
-        const text = lines.map((line, index) =>
-          `<text x="${dimension / 2}" y="${dimension + 4 + index * 5}" text-anchor="middle" font-family="sans-serif" font-size="3">${escapeXml(line)}</text>`
-        ).join("");
+        const lines = annotations.map(({ label, value: annotation }) => `${label}: ${annotation}`);
+        const fontSize = 2;
+        const lineHeight = 3.5;
+        const height = dimension + (lines.length ? lines.length * lineHeight + 2 : 0);
+        let text = "";
+        if (lines.length) {
+          const context = document.createElement("canvas").getContext("2d");
+          if (!context) throw new Error("Unable to lay out the Wi-Fi details.");
+          context.font = `${fontSize}px sans-serif`;
+          text = lines.map((line, index) => {
+            const width = context.measureText(line).width;
+            const fittedSize = fontSize * Math.min(1, (dimension - 4) / width);
+            return `<text x="${dimension / 2}" y="${dimension + 3 + index * lineHeight}" text-anchor="middle" font-family="sans-serif" font-size="${fittedSize}" xml:space="preserve">${escapeXml(line)}</text>`;
+          }).join("");
+        }
         return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${dimension} ${height}" role="img" aria-label="QR code"><rect width="100%" height="100%" fill="#fff"/><path d="${path}" fill="#000" shape-rendering="crispEdges"/>${text}</svg>`;
       }
 
